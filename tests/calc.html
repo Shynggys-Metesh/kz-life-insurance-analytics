@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тесты расчётов</title>
+<style>
+body{font-family:Inter,system-ui,sans-serif;margin:24px;color:#142B49;background:#F4F6F8}
+table{border-collapse:collapse;background:#fff;font-size:13px}td,th{padding:6px 10px;border-bottom:1px solid #e3e8ee;text-align:left}
+.pass{color:#19A58A;font-weight:600}.fail{color:#D75C64;font-weight:600}
+</style></head><body>
+<h1 id="sum">Тесты расчётного модуля…</h1>
+<table><thead><tr><th>Тест</th><th>Результат</th><th>Детали</th></tr></thead><tbody id="t"></tbody></table>
+<script type="module">
+import * as C from '../js/calc.js';
+const T = [];
+const near = (a, b, e = 1e-9) => a !== null && Math.abs(a - b) < e;
+const t = (name, fn) => { try { const r = fn(); T.push([name, r === true, r === true ? '' : String(r)]); } catch (e) { T.push([name, false, e.message]); } };
+
+t('change: 10 − 4 = 6', () => C.change(10, 4).value === 6 || C.change(10, 4));
+t('change: пропуск → не считается', () => C.change(10, null).ok === false);
+t('growth: 855,3 к 628,2 = 36,15%', () => near(C.growth(855.3, 628.2).value, 36.150907, 1e-5) || C.growth(855.3, 628.2).value);
+t('growth: нулевая база → не считается', () => C.growth(5, 0).ok === false && C.growth(5, 0).reason === 'нулевая база');
+t('growth: отрицательная база → не считается', () => C.growth(5, -2).ok === false);
+t('growth: падение 50 → 25 = −50%', () => near(C.growth(25, 50).value, -50));
+t('share: 405 из 1342,2 = 30,17%', () => near(C.share(405, 1342.2).value, 30.17434, 1e-4) || C.share(405, 1342.2).value);
+t('share: итог 0 → не считается', () => C.share(1, 0).ok === false);
+const ytd26 = {kind: 'YTD', freq: 'M', start: '2026-01', end: '2026-09'};
+const ytd25 = {kind: 'YTD', freq: 'M', start: '2025-01', end: '2025-09'};
+const y25 = {kind: 'PERIOD', freq: 'Y', start: '2025-01', end: '2025-12'};
+const ytd26_10 = {kind: 'YTD', freq: 'M', start: '2026-01', end: '2026-10'};
+t('yoy: 9м 2026 к 9м 2025 считается', () => near(C.yoy(855.3, 628.2, ytd26, ytd25).value, 36.150907, 1e-5));
+t('yoy: 10м 2026 к году 2025 → не считается', () => C.yoy(1342.2, 1080.9, ytd26_10, y25).ok === false);
+t('yoy: 10м 2026 к 9м 2025 → не считается (разная длина)', () => C.yoy(1, 1, ytd26_10, ytd25).ok === false);
+t('hhi: монополия = 10 000', () => C.hhi([100]).value === 10000);
+t('hhi: 4 × 25% = 2 500', () => C.hhi([25, 25, 25, 25]).value === 2500);
+t('hhi: сумма долей ≠ 100 → не считается', () => C.hhi([50, 30]).ok === false);
+t('hhi: пороги', () => C.hhiLevel(900).code === 'low' && C.hhiLevel(1500).code === 'mid' && C.hhiLevel(2000).code === 'high');
+t('crN: CR3 из [30, 23, 22, 12, 13] = 75 (сортирует сам)', () => C.crN([12, 30, 13, 23, 22], 3).value === 75 || C.crN([12, 30, 13, 23, 22], 3).value);
+t('crN: мало участников → не считается', () => C.crN([60, 40], 3).ok === false);
+t('lossRatio: 62,5 / 405 = 15,43%', () => near(C.lossRatio(62.5, 405).value, 15.432098, 1e-5));
+t('lossRatio: премии < 0,5 → не считается', () => C.lossRatio(0.1, 0.2).ok === false);
+t('shares: сумма = 100', () => near(C.shares([{value: 1}, {value: 3}]).reduce((a, r) => a + r.share, 0), 100));
+t('rank: по убыванию, пропуски в конце', () => { const r = C.rank([{v: 1}, {v: null}, {v: 5}], 'v'); return r[0].v === 5 && r[2].v === null && r[0].rank === 1; });
+
+const pass = T.filter(x => x[1]).length;
+document.getElementById('sum').textContent = `Тесты расчётного модуля: ${pass} из ${T.length} пройдено`;
+document.getElementById('t').innerHTML = T.map(([n, p, d]) => `<tr><td>${n}</td><td class="${p ? 'pass' : 'fail'}">${p ? 'OK' : 'FAIL'}</td><td>${d}</td></tr>`).join('');
+window.__tests = {pass, total: T.length, failed: T.filter(x => !x[1]).map(x => x[0] + ': ' + x[2])};
+</script>
+</body></html>
