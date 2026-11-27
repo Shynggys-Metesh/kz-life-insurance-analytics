@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Страхование жизни РК</title>
+<meta name="description" content="Мониторинг рынка страхования жизни Казахстана: премии, выплаты, доли рынка, классы страхования. Данные НБК и АРРФР.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font-anthropic-sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-anthropic-serif:"Source Serif 4",Georgia,serif;
+  --color-bg:#f7f6f3;--color-fg:#1f1e1c;--color-fg-muted:#6b6862;
+  --color-panel:#ffffff;--color-border-line:#e4e1da;
+  --color-ok:#2e7d4f;--color-bad:#c0392b;
+  --cds-text-secondary:#6b6862;--cds-chart-axis:#c9c5bc;--cds-chart-grid:#eeebe5;
+  --cds-surface-popover:#ffffff;--cds-border:#dcd8cf;--cds-shadow-popover:0 4px 14px rgba(0,0,0,.12);
+  --cds-radius:10px;--cds-pad-xs:4px;--cds-pad-sm:8px;--cds-pad-lg:20px;
+  --cds-gap-xs:4px;--cds-gap-sm:8px;--cds-gap-md:16px;--cds-gap-xl:32px;
+  --cds-font-size-title:clamp(1.35rem,2.2vw,1.75rem);--cds-font-size-heading:1.1rem;--cds-font-size-body:1rem;--cds-font-size-caption:.8125rem;
+  --cds-font-weight-medium:600;
+  --c0:#2f6fd6;--c1:#e07b39;--c2:#3a9e7a;--c3:#8a5cc8;--c4:#d14d72;--c5:#b9932c;--c6:#5a7f99;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --color-bg:#191918;--color-fg:#ecebe8;--color-fg-muted:#a29f98;
+    --color-panel:#232321;--color-border-line:#36352f;
+    --color-ok:#5cc28a;--color-bad:#ef6f61;
+    --cds-text-secondary:#a29f98;--cds-chart-axis:#4a4943;--cds-chart-grid:#2f2e2a;
+    --cds-surface-popover:#2b2a27;--cds-border:#44433d;--cds-shadow-popover:0 4px 14px rgba(0,0,0,.5);
+    --c0:#5b93ee;--c1:#f0965a;--c2:#55bb95;--c3:#a57fe0;--c4:#e9708f;--c5:#d6b14a;--c6:#7fa2bb;
+  }
+}
+:root[data-theme="dark"]{
+  --color-bg:#191918;--color-fg:#ecebe8;--color-fg-muted:#a29f98;
+  --color-panel:#232321;--color-border-line:#36352f;
+  --color-ok:#5cc28a;--color-bad:#ef6f61;
+  --cds-text-secondary:#a29f98;--cds-chart-axis:#4a4943;--cds-chart-grid:#2f2e2a;
+  --cds-surface-popover:#2b2a27;--cds-border:#44433d;--cds-shadow-popover:0 4px 14px rgba(0,0,0,.5);
+  --c0:#5b93ee;--c1:#f0965a;--c2:#55bb95;--c3:#a57fe0;--c4:#e9708f;--c5:#d6b14a;--c6:#7fa2bb;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--color-bg);color:var(--color-fg)}
+#dash-root{max-width:1200px;margin:0 auto;padding:24px 16px 48px}
+.dash-select{font:inherit;font-size:.875rem;padding:6px 8px;border-radius:8px;border:1px solid var(--color-border-line);background:var(--color-panel);color:var(--color-fg)}
+.dash-skeleton{background:linear-gradient(90deg,var(--color-border-line),transparent,var(--color-border-line));background-size:200% 100%;animation:sk 1.4s infinite;border-radius:8px;opacity:.5}
+@keyframes sk{to{background-position:-200% 0}}
+.site-foot{max-width:1200px;margin:0 auto;padding:0 16px 32px;font-family:var(--font-anthropic-sans);font-size:.8125rem;color:var(--color-fg-muted)}
+.site-foot a{color:inherit}
+@media (max-width:420px){.kz .grid2{grid-template-columns:1fr !important}.kz .chart{min-height:200px}}
+</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='8' width='3' height='7' fill='%232f6fd6'/%3E%3Crect x='6' y='4' width='3' height='11' fill='%232f6fd6'/%3E%3Crect x='11' y='1' width='3' height='14' fill='%23e07b39'/%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+/* Minimal stand-in for the Claude dashboard runtime: loads data/*.json and redraws [data-draw] elements. */
+(function () {
+  const IDS = ['kpi', 'companies', 'classes', 'company_classes', 'monthly', 'yoy', 'history'];
+  const store = {}; IDS.forEach(id => { store[id] = {status: 'loading', data: []}; });
+  const fns = {};
+  const css = getComputedStyle(document.documentElement);
+  const colors = [];
+  function readColors() { colors.length = 0; for (let i = 0; i < 7; i++) colors.push(getComputedStyle(document.documentElement).getPropertyValue('--c' + i).trim()); }
+  readColors();
+  function run(name) { const fn = fns[name]; if (!fn) return; document.querySelectorAll('[data-draw="' + name + '"]').forEach(el => { try { fn(el); } catch (e) { console.error(name, e); } }); }
+  window.dash = {
+    colors,
+    data(id) { const d = store[id] || {status: 'missing', data: []}; return {status: d.status, data: d.data, columns: d.data[0] ? Object.keys(d.data[0]) : []}; },
+    draw(name, fn) { if (fn) fns[name] = fn; if (document.readyState !== 'loading') run(name); },
+    redrawAll() { Object.keys(fns).forEach(run); }
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    dash.redrawAll();
+    Promise.all(IDS.map(id => fetch('data/' + id + '.json', {cache: 'no-cache'})
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(j => { store[id] = {status: 'ok', data: Array.isArray(j) ? j : (j.rows || [])}; })
+      .catch(() => { store[id] = {status: 'error', data: []}; })
+    )).then(() => dash.redrawAll());
+    let w = window.innerWidth, t;
+    window.addEventListener('resize', () => { if (window.innerWidth === w) return; w = window.innerWidth; clearTimeout(t); t = setTimeout(() => dash.redrawAll(), 150); });
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', () => { readColors(); dash.redrawAll(); });
+  });
+})();
+</script>
+</head>
+<body>
+<main id="dash-root">
+<style>
+.kz{font-family:var(--font-anthropic-sans);color:var(--color-fg);display:flex;flex-direction:column;gap:var(--cds-gap-xl)}
+.kz h1{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);margin:0}
+.kz h2{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);margin:0 0 var(--cds-gap-xs)}
+.kz .sub{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);margin:0 0 var(--cds-gap-sm)}
+.kz .lead{font-size:var(--cds-font-size-body);line-height:1.5;margin:var(--cds-gap-sm) 0 0;max-width:62rem}
+.kz .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--cds-gap-md)}
+.kz .card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);min-width:0}
+.kz .tile .lbl{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.kz .tile .val{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);font-variant-numeric:tabular-nums;margin:var(--cds-gap-xs) 0}
+.kz .tile .note{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.kz .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--cds-gap-md)}
+.kz .chart{position:relative;min-height:260px;width:100%}
+.kz .chart svg{display:block;width:100%}
+.kz .chart text{font-size:var(--cds-font-size-caption);fill:var(--cds-text-secondary)}
+.kz .chart .axis path,.kz .chart .axis line{stroke:var(--cds-chart-axis)}
+.kz .chart .grid line{stroke:var(--cds-chart-grid)}
+.kz .tip{position:absolute;pointer-events:none;background:var(--cds-surface-popover);border:1px solid var(--cds-border);box-shadow:var(--cds-shadow-popover);border-radius:var(--cds-radius);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);white-space:nowrap;z-index:2}
+.kz .legend{display:flex;gap:var(--cds-gap-md);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);margin-bottom:var(--cds-gap-xs);flex-wrap:wrap}
+.kz .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.kz .tw{overflow-x:auto}
+.kz table{border-collapse:collapse;width:100%;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.kz th,.kz td{padding:6px 8px;border-bottom:1px solid var(--color-border-line);text-align:right;white-space:nowrap}
+.kz th:first-child,.kz td:first-child{text-align:left}
+.kz th{color:var(--color-fg-muted);font-weight:var(--cds-font-weight-medium);vertical-align:bottom;white-space:normal}
+.kz .pos{color:var(--color-ok)} .kz .neg{color:var(--color-bad)}
+.kz .row{display:flex;justify-content:space-between;align-items:center;gap:var(--cds-gap-sm);flex-wrap:wrap}
+.kz details{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);line-height:1.5}
+.kz details li{margin-bottom:4px}
+</style>
+<div class="kz" data-read lang="ru">
+  <header id="top">
+    <h1>Страхование жизни в Казахстане — мониторинг рынка</h1>
+    <p class="sub">10 компаний по страхованию жизни (КСЖ). Данные НБК и АРРФР, обновление ежемесячно.</p>
+    <p class="lead">За <span data-draw="k-period" data-source="kpi" data-field="period_label" data-row="0">—</span> КСЖ собрали <b data-draw="k-prem2" data-source="kpi" data-field="prem" data-row="0">—</b> млрд ₸ премий — это <b data-draw="k-pct25" data-source="kpi" data-field="pct_of_2025" data-row="0">—</b>% от всего 2025 года. Рынок концентрирован: лидер <b data-draw="k-leader" data-source="kpi" data-field="leader" data-row="0">—</b> держит <b data-draw="k-lshare" data-source="kpi" data-field="leader_share" data-row="0">—</b>%, тройка лидеров — <b data-draw="k-top3" data-source="kpi" data-field="top3_share" data-row="0">—</b>%. Рост обеспечивает пенсионный аннуитет: <b data-draw="k-pens" data-source="kpi" data-field="pension_share" data-row="0">—</b>% всех премий.</p>
+  </header>
+
+  <section id="kpis" class="tiles">
+    <div class="card tile"><div class="lbl">Страховые премии, янв–окт 2026</div><div class="val"><span data-draw="k-prem" data-source="kpi" data-field="prem" data-row="0">—</span> млрд ₸</div><div class="note">с начала года, валовые</div></div>
+    <div class="card tile"><div class="lbl">Страховые выплаты, янв–окт 2026</div><div class="val"><span data-draw="k-pay" data-source="kpi" data-field="pay" data-row="0">—</span> млрд ₸</div><div class="note">с начала года</div></div>
+    <div class="card tile"><div class="lbl">Уровень выплат</div><div class="val"><span data-draw="k-lr" data-source="kpi" data-field="loss_ratio" data-row="0">—</span>%</div><div class="note">выплаты / премии</div></div>
+    <div class="card tile"><div class="lbl">Рост премий год к году</div><div class="val"><span data-draw="k-yoy" data-source="yoy" data-field="chg" data-row="0">—</span>%</div><div class="note">9 мес. 2026 к 9 мес. 2025, АРРФР</div></div>
+    <div class="card tile"><div class="lbl">Активы КСЖ на 01.11.2026</div><div class="val"><span data-draw="k-assets" data-source="kpi" data-field="assets" data-row="0">—</span> млрд ₸</div><div class="note">по отчётам о пруд. нормативах</div></div>
+    <div class="card tile"><div class="lbl">Чистая прибыль КСЖ, 9 мес. 2026</div><div class="val"><span data-draw="k-np" data-source="kpi" data-field="net_profit" data-row="0">—</span> млрд ₸</div><div class="note">сумма по 10 компаниям</div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card" id="share">
+      <h2>Доли рынка по премиям</h2>
+      <p class="sub">Премии с начала 2026 года, млрд ₸ и доля, %</p>
+      <div class="chart" data-draw="share-chart" data-source="companies"></div>
+    </div>
+    <div class="card" id="classes">
+      <h2>Структура по классам страхования</h2>
+      <p class="sub">Премии и выплаты с начала 2026 года, млрд ₸</p>
+      <div class="legend"><span><i data-draw="lg0"></i>Премии</span><span><i data-draw="lg1"></i>Выплаты</span></div>
+      <div class="chart" data-draw="class-chart" data-source="classes"></div>
+    </div>
+  </section>
+
+  <section class="card" id="monthly">
+    <div class="row"><div><h2>Помесячная динамика</h2><p class="sub">Премии и выплаты за каждый месяц 2026 года, млрд ₸</p></div>
+      <select class="dash-select" aria-label="Компания" data-draw="co-select" data-source="monthly"></select></div>
+    <div class="legend"><span><i data-draw="lg2"></i>Премии за месяц</span><span><i data-draw="lg3"></i>Выплаты за месяц</span></div>
+    <div class="chart" data-draw="month-chart" data-source="monthly"></div>
+  </section>
+
+  <section class="card" id="scorecard">
+    <h2>Показатели компаний</h2>
+    <p class="sub">Премии и выплаты — янв–окт 2026; активы и нормативы — на 01.11.2026; прибыль и капитал — на 01.10.2026</p>
+    <div class="tw"><table data-source="companies" data-row-key="company">
+      <thead><tr>
+        <th data-field="company">Компания</th><th data-field="prem">Премии, млрд ₸</th><th data-field="share">Доля, %</th><th data-field="prem_2025">Премии 2025 (год), млрд ₸</th><th data-field="pay">Выплаты, млрд ₸</th><th data-field="loss_ratio">Уровень выплат, %</th><th data-field="pension_share">Доля пенс. аннуитета, %</th><th data-field="assets">Активы, млрд ₸</th><th data-field="net_profit">Чистая прибыль, млрд ₸</th><th data-field="equity">Капитал, млрд ₸</th><th data-field="margin">Маржа платёжеспособности</th><th data-field="ndva">НДВА</th><th data-field="prud_ok">Нормативы выполнены</th>
+      </tr></thead>
+      <tbody data-draw="co-table"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="mix">
+    <h2>Структура портфеля по компаниям</h2>
+    <p class="sub">Доля каждого класса в премиях компании, январь–октябрь 2026, %</p>
+    <div class="legend" data-draw="mix-legend" data-source="company_classes"></div>
+    <div class="chart" data-draw="mix-chart" data-source="company_classes"></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card" id="co-detail">
+      <div class="row"><div><h2>Детально по компании</h2><p class="sub">Премии и выплаты по классам, январь–октябрь 2026, млрд ₸</p></div>
+        <select class="dash-select" aria-label="Компания для детализации" data-draw="det-select" data-source="company_classes"></select></div>
+      <div class="legend"><span><i data-draw="lg6"></i>Премии</span><span><i data-draw="lg7"></i>Выплаты</span></div>
+      <div class="chart" data-draw="det-chart" data-source="company_classes"></div>
+      <div class="tw"><table data-source="company_classes" data-row-key="company,cls">
+        <thead><tr><th data-field="cls">Класс</th><th data-field="prem">Премии, млрд ₸</th><th data-field="share_in_company">Доля в портфеле, %</th><th data-field="share_in_class">Доля компании в классе на рынке, %</th><th data-field="pay">Выплаты, млрд ₸</th><th data-field="loss_ratio">Уровень выплат, %</th></tr></thead>
+        <tbody data-draw="det-table"></tbody>
+      </table></div>
+      <p class="sub">Уровень выплат показан, если премии класса у компании от 0,5 млрд ₸. Выплаты могут превышать премии, если идут по договорам прошлых лет.</p>
+    </div>
+    <div class="card" id="leaders">
+      <h2>Кто лидирует в каждом классе</h2>
+      <p class="sub">Доля компании в премиях класса по всему рынку, %. Чем темнее ячейка, тем больше доля.</p>
+      <div class="chart" data-draw="heat" data-source="company_classes"></div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="card" id="yoy">
+      <h2>Год к году по данным АРРФР</h2>
+      <p class="sub">9 месяцев 2025 против 9 месяцев 2026, млрд ₸</p>
+      <div class="tw"><table data-source="yoy" data-row-key="item">
+        <thead><tr><th data-field="item">Показатель</th><th data-field="v2025">9м 2025</th><th data-field="v2026">9м 2026</th><th data-field="chg">Изменение, %</th></tr></thead>
+        <tbody data-draw="yoy-table"></tbody>
+      </table></div>
+    </div>
+    <div class="card" id="history">
+      <h2>Рынок страхования жизни по годам</h2>
+      <p class="sub">Премии и выплаты, млрд ₸; над столбцами — уровень выплат</p>
+      <div class="legend"><span><i data-draw="lg4"></i>Премии</span><span><i data-draw="lg5"></i>Выплаты</span></div>
+      <div class="chart" data-draw="hist-chart" data-source="history"></div>
+    </div>
+  </section>
+
+  <details id="method">
+    <summary>Методология и источники</summary>
+    <ul>
+      <li>Данные по компаниям — Национальный Банк РК, раздел «Статистика → Страховой сектор → Финансовые показатели»: файлы «Поступление страховых премий по отраслям и классам страхования (по страхованию жизни)», «Страховые выплаты…», «Основные финансовые показатели (по страхованию жизни)», «Сведения о выполнении пруденциальных нормативов».</li>
+      <li>Сравнение год к году и история — обзор АРРФР «Текущее состояние страхового сектора». Премии в обзоре АРРФР указаны за вычетом входящего перестрахования от резидентов и расторжений, поэтому они ниже валовых премий НБК.</li>
+      <li>Выплаты из файла НБК по классам на 01.10.2026 — 197,3 млрд ₸, а в сводных показателях НБК и обзоре АРРФР — около 189,7 млрд ₸. Расхождение около 4%. Для сравнения компаний используется файл по классам, потому что только в нём есть разбивка по компаниям.</li>
+      <li>Помесячные значения — разница накопленных итогов с начала года. Отрицательное значение возможно при расторжениях и корректировках.</li>
+      <li>«Коммеск-Өмір» переименована в Centras Life, история объединена под новым названием.</li>
+      <li>ОСНС — обязательное страхование работника от несчастных случаев. НДВА — норматив достаточности высоколиквидных активов (должен быть больше 1). Маржа платёжеспособности — тоже больше 1.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+window.KZ = window.KZ || {};
+const L = d3.formatLocale({decimal: ',', thousands: ' ', grouping: [3], currency: ['', ' ₸']});
+KZ.f1 = L.format(',.1f');
+KZ.f2 = L.format(',.2f');
+KZ.num = (v) => (v === null || v === undefined || v === '') ? null : +v;
+KZ.co = KZ.co || 'Рынок';
+KZ.tip = (el) => { let t = el.querySelector('.tip'); if (!t) { t = document.createElement('div'); t.className = 'tip'; t.hidden = true; el.appendChild(t); } return t; };
+KZ.showTip = (el, tip, ev, lines) => {
+  tip.replaceChildren(...lines.filter(Boolean).map((s, i) => { const d = document.createElement('div'); d.textContent = s; if (i === 0) d.style.fontWeight = '600'; return d; }));
+  tip.hidden = false;
+  const r = el.getBoundingClientRect(); let x = ev.clientX - r.left + 12, y = ev.clientY - r.top + 12;
+  if (x + tip.offsetWidth > r.width) x = Math.max(0, ev.clientX - r.left - tip.offsetWidth - 12);
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+};
+KZ.status = (el, id) => {
+  const s = dash.data(id).status;
+  if (s === 'ok') { el.classList.remove('dash-skeleton'); return true; }
+  if (s === 'loading') { el.classList.add('dash-skeleton'); return false; }
+  el.classList.remove('dash-skeleton');
+  el.textContent = s === 'error' ? 'Не удалось загрузить данные.' : '—';
+  return false;
+};
+</script>
+
+<script>
+const kpis = [['k-period','period_label',null],['k-prem','prem',1],['k-prem2','prem',1],['k-pct25','pct_of_2025',1],['k-leader','leader',null],['k-lshare','leader_share',1],['k-top3','top3_share',1],['k-pens','pension_share',1],['k-pay','pay',1],['k-lr','loss_ratio',1],['k-assets','assets',1],['k-np','net_profit',1]];
+kpis.forEach(([name, field, dec]) => dash.draw(name, (el) => {
+  const d = dash.data('kpi');
+  if (d.status !== 'ok' || !d.data.length) { el.textContent = '—'; return; }
+  const v = d.data[0][field];
+  el.textContent = dec ? KZ.f1(+v) : String(v);
+  if (field === 'net_profit') el.className = +v >= 0 ? 'pos' : 'neg';
+}));
+dash.draw('k-yoy', (el) => {
+  const d = dash.data('yoy');
+  if (d.status !== 'ok' || !d.data.length) { el.textContent = '—'; return; }
+  const v = +d.data[0].chg; el.textContent = (v > 0 ? '+' : '') + KZ.f1(v); el.className = v >= 0 ? 'pos' : 'neg';
+});
+['lg0','lg2','lg4'].forEach(n => dash.draw(n, el => { el.style.background = dash.colors[0]; }));
+['lg1','lg3','lg5'].forEach(n => dash.draw(n, el => { el.style.background = dash.colors[1]; }));
+</script>
+
+<script>
+dash.draw('share-chart', (el) => {
+  if (!KZ.status(el, 'companies')) return;
+  const rows = dash.data('companies').data.map(r => ({c: r.company, v: +r.prem, s: +r.share})).sort((a, b) => b.v - a.v);
+  el.replaceChildren();
+  const W = el.clientWidth || 400, bh = 24, m = {t: 4, r: 90, b: 4, l: 10};
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', 'Доли компаний в премиях по страхованию жизни');
+  const tmp = svg.append('g'); let lw = 0;
+  rows.forEach(r => { const t = tmp.append('text').text(r.c); lw = Math.max(lw, t.node().getComputedTextLength()); }); tmp.remove();
+  m.l = lw + 10;
+  const H = rows.length * bh + m.t + m.b; svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => r.v)]).range([m.l, W - m.r]);
+  const y = d3.scaleBand().domain(rows.map(r => r.c)).range([m.t, H - m.b]).padding(0.25);
+  const tip = KZ.tip(el);
+  const g = svg.selectAll('g.b').data(rows).join('g');
+  g.append('text').attr('x', m.l - 8).attr('y', r => y(r.c) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text(r => r.c);
+  g.append('rect').attr('x', m.l).attr('y', r => y(r.c)).attr('height', y.bandwidth()).attr('width', r => Math.max(1, x(r.v) - m.l)).attr('rx', 2).style('fill', dash.colors[0])
+    .on('pointermove', (ev, r) => KZ.showTip(el, tip, ev, [r.c, `Премии: ${KZ.f1(r.v)} млрд ₸`, `Доля: ${KZ.f1(r.s)}%`])).on('pointerleave', () => { tip.hidden = true; });
+  g.append('text').attr('x', r => x(r.v) + 6).attr('y', r => y(r.c) + y.bandwidth() / 2).attr('dy', '0.35em').text(r => `${KZ.f1(r.v)} · ${KZ.f1(r.s)}%`);
+});
+
+dash.draw('class-chart', (el) => {
+  if (!KZ.status(el, 'classes')) return;
+  const rows = dash.data('classes').data.map(r => ({c: r.cls, p: +r.prem, y: +r.pay, s: +r.prem_share, lr: KZ.num(r.loss_ratio)})).filter(r => r.p > 0 || r.y > 0).sort((a, b) => b.p - a.p);
+  el.replaceChildren();
+  const W = el.clientWidth || 400, rh = 46, m = {t: 4, r: 70, b: 4, l: 8};
+  const H = rows.length * rh + m.t + m.b;
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', 'Премии и выплаты по классам страхования').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => Math.max(r.p, r.y))]).range([m.l, W - m.r]);
+  const tip = KZ.tip(el);
+  const g = svg.selectAll('g.r').data(rows).join('g').attr('transform', (r, i) => `translate(0,${m.t + i * rh})`);
+  g.append('text').attr('x', m.l).attr('y', 11).text(r => r.c);
+  [['p', 0, 16], ['y', 1, 30]].forEach(([k, ci, yy]) => {
+    g.append('rect').attr('x', m.l).attr('y', yy).attr('height', 11).attr('rx', 2).attr('width', r => Math.max(1, x(r[k]) - m.l)).style('fill', dash.colors[ci])
+      .on('pointermove', (ev, r) => KZ.showTip(el, tip, ev, [r.c, `Премии: ${KZ.f1(r.p)} млрд ₸ (${KZ.f1(r.s)}%)`, `Выплаты: ${KZ.f1(r.y)} млрд ₸`, r.lr === null ? '' : `Уровень выплат: ${KZ.f1(r.lr)}%`])).on('pointerleave', () => { tip.hidden = true; });
+    g.append('text').attr('x', r => x(r[k]) + 5).attr('y', yy + 9).text(r => KZ.f1(r[k]));
+  });
+});
+</script>
+
+<script>
+dash.draw('co-select', (sel) => {
+  const d = dash.data('monthly');
+  const cos = d.status === 'ok' ? [...new Set(d.data.map(r => r.company))] : ['Рынок'];
+  sel.replaceChildren(...cos.map(c => new Option(c === 'Рынок' ? 'Весь рынок' : c, c)));
+  sel.value = KZ.co;
+  sel.onchange = () => { KZ.co = sel.value; dash.draw('month-chart'); };
+});
+dash.draw('month-chart', (el) => {
+  if (!KZ.status(el, 'monthly')) return;
+  const rows = dash.data('monthly').data.filter(r => r.company === KZ.co).map(r => ({m: r.month, p: +r.prem_month, y: +r.pay_month, pc: +r.prem_ytd, yc: +r.pay_ytd}));
+  el.replaceChildren();
+  const W = el.clientWidth || 600, H = 280, m = {t: 18, r: 10, b: 24, l: 44};
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', `Премии и выплаты по месяцам 2026: ${KZ.co}`).attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x0 = d3.scaleBand().domain(rows.map(r => r.m)).range([m.l, W - m.r]).padding(0.2);
+  const x1 = d3.scaleBand().domain(['p', 'y']).range([0, x0.bandwidth()]).padding(0.08);
+  const lo = Math.min(0, d3.min(rows, r => Math.min(r.p, r.y)));
+  const y = d3.scaleLinear().domain([lo, d3.max(rows, r => Math.max(r.p, r.y)) * 1.1]).nice().range([H - m.b, m.t]);
+  svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat('')).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat(d3.format('~f'))).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${y(0)})`).call(d3.axisBottom(x0).tickSize(0)).call(g => g.selectAll('text').attr('dy', '1.1em'));
+  const tip = KZ.tip(el);
+  const g = svg.selectAll('g.m').data(rows).join('g').attr('transform', r => `translate(${x0(r.m)},0)`);
+  [['p', 0], ['y', 1]].forEach(([k, ci]) => g.append('rect').attr('x', x1(k)).attr('width', x1.bandwidth()).attr('y', r => y(Math.max(0, r[k]))).attr('height', r => Math.abs(y(r[k]) - y(0))).attr('rx', 2).style('fill', dash.colors[ci]));
+  g.append('rect').attr('width', x0.bandwidth()).attr('y', m.t).attr('height', H - m.t - m.b).style('fill', 'transparent')
+    .on('pointermove', (ev, r) => KZ.showTip(el, tip, ev, [`${r.m} 2026 — ${KZ.co === 'Рынок' ? 'весь рынок' : KZ.co}`, `Премии за месяц: ${KZ.f1(r.p)} млрд ₸`, `Выплаты за месяц: ${KZ.f1(r.y)} млрд ₸`, `С начала года: ${KZ.f1(r.pc)} / ${KZ.f1(r.yc)} млрд ₸`])).on('pointerleave', () => { tip.hidden = true; });
+  if (W > 520) g.append('text').attr('x', x1('p') + x1.bandwidth() / 2).attr('y', r => y(Math.max(0, r.p)) - 4).attr('text-anchor', 'middle').text(r => KZ.f1(r.p));
+});
+</script>
+
+<script>
+dash.draw('co-table', (tb) => {
+  const d = dash.data('companies');
+  if (d.status !== 'ok') { tb.replaceChildren(); return; }
+  const cols = ['company','prem','share','prem_2025','pay','loss_ratio','pension_share','assets','net_profit','equity','margin','ndva','prud_ok'];
+  const two = new Set(['margin','ndva']);
+  const rows = [...d.data].sort((a, b) => +b.prem - +a.prem);
+  tb.replaceChildren(...rows.map(r => {
+    const tr = document.createElement('tr');
+    cols.forEach(c => {
+      const td = document.createElement('td'); const v = r[c];
+      if (c === 'company' || c === 'prud_ok') td.textContent = v ?? '—';
+      else if (v === null || v === undefined || v === '') td.textContent = '—';
+      else { td.textContent = two.has(c) ? KZ.f2(+v) : KZ.f1(+v); if (c === 'net_profit') td.className = +v >= 0 ? 'pos' : 'neg'; }
+      if (c === 'prud_ok' && v !== 'да') td.className = 'neg';
+      tr.appendChild(td);
+    });
+    return tr;
+  }));
+});
+dash.draw('yoy-table', (tb) => {
+  const d = dash.data('yoy');
+  if (d.status !== 'ok') { tb.replaceChildren(); return; }
+  tb.replaceChildren(...d.data.map(r => {
+    const tr = document.createElement('tr');
+    [['item', String(r.item)], ['v2025', KZ.f1(+r.v2025)], ['v2026', KZ.f1(+r.v2026)], ['chg', (+r.chg > 0 ? '+' : '') + KZ.f1(+r.chg)]].forEach(([k, t]) => {
+      const td = document.createElement('td'); td.textContent = t; if (k === 'chg') td.className = +r.chg >= 0 ? 'pos' : 'neg'; tr.appendChild(td);
+    });
+    return tr;
+  }));
+});
+</script>
+
+<script>
+dash.draw('hist-chart', (el) => {
+  if (!KZ.status(el, 'history')) return;
+  const rows = dash.data('history').data.map(r => ({k: String(r.period), p: +r.prem, y: +r.pay, q: +r.ratio}));
+  el.replaceChildren();
+  const W = el.clientWidth || 400, H = 260, m = {t: 22, r: 6, b: 24, l: 40};
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', 'Премии и выплаты по страхованию жизни, 2022 — 9 месяцев 2026').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x0 = d3.scaleBand().domain(rows.map(r => r.k)).range([m.l, W - m.r]).padding(0.2);
+  const x1 = d3.scaleBand().domain(['p', 'y']).range([0, x0.bandwidth()]).padding(0.08);
+  const y = d3.scaleLinear().domain([0, d3.max(rows, r => r.p) * 1.12]).nice().range([H - m.b, m.t]);
+  svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat('')).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4)).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x0).tickSize(0)).call(g => g.selectAll('text').attr('dy', '1.1em'));
+  const tip = KZ.tip(el);
+  const g = svg.selectAll('g.h').data(rows).join('g').attr('transform', r => `translate(${x0(r.k)},0)`);
+  [['p', 0], ['y', 1]].forEach(([k, ci]) => g.append('rect').attr('x', x1(k)).attr('width', x1.bandwidth()).attr('y', r => y(r[k])).attr('height', r => y(0) - y(r[k])).attr('rx', 2).style('fill', dash.colors[ci]));
+  g.append('text').attr('x', x0.bandwidth() / 2).attr('y', r => y(r.p) - 6).attr('text-anchor', 'middle').text(r => r.q + '%');
+  g.append('rect').attr('width', x0.bandwidth()).attr('y', m.t).attr('height', H - m.t - m.b).style('fill', 'transparent')
+    .on('pointermove', (ev, r) => KZ.showTip(el, tip, ev, [r.k, `Премии: ${r.p} млрд ₸`, `Выплаты: ${r.y} млрд ₸`, `Выплаты/премии: ${r.q}%`])).on('pointerleave', () => { tip.hidden = true; });
+});
+</script>
+
+<script>
+KZ.SH = {'Пенсионное аннуитетное': 'Пенс. аннуитет', 'Страхование жизни (накопительное/рисковое)': 'Страх. жизни', 'ОСНС (обяз. страхование работника)': 'ОСНС', 'Прочее аннуитетное': 'Проч. аннуитет', 'Несчастные случаи (добровольное)': 'НС добров.', 'Страхование на случай болезни': 'Болезнь', 'ГОНС (образовательные накопления)': 'ГОНС'};
+KZ.sh = (c) => KZ.SH[c] || c;
+KZ.cc = () => {
+  const d = dash.data('company_classes'); if (d.status !== 'ok') return null;
+  const classes = [...new Set(d.data.map(r => r.cls))];
+  const tot = d3.rollup(d.data, v => d3.sum(v, r => +r.prem), r => r.company);
+  const cos = [...tot.keys()].sort((a, b) => tot.get(b) - tot.get(a));
+  return {rows: d.data, classes, cos, tot};
+};
+KZ.ccol = (i) => dash.colors[i % dash.colors.length];
+KZ.det = KZ.det || null;
+
+dash.draw('mix-legend', (el) => {
+  const m = KZ.cc(); if (!m) { el.replaceChildren(); return; }
+  el.replaceChildren(...m.classes.map((c, i) => { const s = document.createElement('span'); const k = document.createElement('i'); k.style.background = KZ.ccol(i); s.append(k, KZ.sh(c)); return s; }));
+});
+
+dash.draw('mix-chart', (el) => {
+  if (!KZ.status(el, 'company_classes')) return;
+  const m = KZ.cc(); el.replaceChildren();
+  const W = el.clientWidth || 600, bh = 28, mg = {t: 4, r: 22, b: 20, l: 10};
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', 'Доля классов страхования в премиях каждой компании');
+  const tmp = svg.append('g'); let lw = 0;
+  m.cos.forEach(c => { lw = Math.max(lw, tmp.append('text').text(c).node().getComputedTextLength()); }); tmp.remove();
+  mg.l = lw + 10;
+  const H = m.cos.length * bh + mg.t + mg.b; svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x = d3.scaleLinear().domain([0, 100]).range([mg.l, W - mg.r]);
+  const y = d3.scaleBand().domain(m.cos).range([mg.t, H - mg.b]).padding(0.2);
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - mg.b})`).call(d3.axisBottom(x).ticks(W < 500 ? 3 : 5).tickFormat(v => v + '%')).call(g => g.select('.domain').remove());
+  const tip = KZ.tip(el);
+  m.cos.forEach(c => {
+    let acc = 0;
+    const g = svg.append('g');
+    g.append('text').attr('x', mg.l - 8).attr('y', y(c) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text(c);
+    m.classes.forEach((cl, i) => {
+      const r = m.rows.find(z => z.company === c && z.cls === cl); if (!r) return;
+      const v = +r.share_in_company; if (v <= 0) return;
+      const x0 = x(acc), w = x(acc + v) - x(acc); acc += v;
+      g.append('rect').attr('x', x0).attr('y', y(c)).attr('width', Math.max(0, w)).attr('height', y.bandwidth()).style('fill', KZ.ccol(i)).style('stroke', 'var(--color-panel)').style('stroke-width', 1)
+        .on('pointermove', (ev) => KZ.showTip(el, tip, ev, [c, cl, `Доля в портфеле: ${KZ.f1(v)}%`, `Премии: ${KZ.f1(+r.prem)} млрд ₸`])).on('pointerleave', () => { tip.hidden = true; });
+      if (w > 36) g.append('text').attr('x', x0 + w / 2).attr('y', y(c) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'middle').style('fill', '#fff').style('pointer-events', 'none').text(Math.round(v) + '%');
+    });
+  });
+});
+
+dash.draw('det-select', (sel) => {
+  const m = KZ.cc();
+  const cos = m ? m.cos : [];
+  if (!KZ.det && cos.length) KZ.det = cos[0];
+  sel.replaceChildren(...cos.map(c => new Option(c, c)));
+  if (KZ.det) sel.value = KZ.det;
+  sel.onchange = () => { KZ.det = sel.value; dash.draw('det-chart'); dash.draw('det-table'); };
+});
+
+dash.draw('det-chart', (el) => {
+  if (!KZ.status(el, 'company_classes')) return;
+  const m = KZ.cc(); const co = KZ.det || m.cos[0];
+  const rows = m.rows.filter(r => r.company === co && (+r.prem !== 0 || +r.pay !== 0)).map(r => ({c: r.cls, p: +r.prem, y: +r.pay, s: +r.share_in_company, sc: +r.share_in_class, lr: KZ.num(r.loss_ratio)})).sort((a, b) => b.p - a.p);
+  el.replaceChildren();
+  const W = el.clientWidth || 400, rh = 46, mg = {t: 4, r: 70, b: 4, l: 8};
+  const H = Math.max(1, rows.length) * rh + mg.t + mg.b;
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', `Премии и выплаты по классам: ${co}`).attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => Math.max(r.p, r.y)) || 1]).range([mg.l, W - mg.r]);
+  const tip = KZ.tip(el);
+  const g = svg.selectAll('g.r').data(rows).join('g').attr('transform', (r, i) => `translate(0,${mg.t + i * rh})`);
+  g.append('text').attr('x', mg.l).attr('y', 11).text(r => `${W < 460 ? KZ.sh(r.c) : r.c} — ${KZ.f1(r.s)}%`);
+  [['p', 0, 16], ['y', 1, 30]].forEach(([k, ci, yy]) => {
+    g.append('rect').attr('x', mg.l).attr('y', yy).attr('height', 11).attr('rx', 2).attr('width', r => Math.max(1, x(Math.max(0, r[k])) - mg.l)).style('fill', dash.colors[ci])
+      .on('pointermove', (ev, r) => KZ.showTip(el, tip, ev, [`${co}: ${r.c}`, `Премии: ${KZ.f1(r.p)} млрд ₸ (${KZ.f1(r.s)}% портфеля)`, `Доля компании в классе: ${KZ.f1(r.sc)}%`, `Выплаты: ${KZ.f1(r.y)} млрд ₸`, r.lr === null ? '' : `Уровень выплат: ${KZ.f1(r.lr)}%`])).on('pointerleave', () => { tip.hidden = true; });
+    g.append('text').attr('x', r => x(Math.max(0, r[k])) + 5).attr('y', yy + 9).text(r => KZ.f1(r[k]));
+  });
+});
+
+dash.draw('det-table', (tb) => {
+  const m = KZ.cc(); if (!m) { tb.replaceChildren(); return; }
+  const co = KZ.det || m.cos[0];
+  const rows = m.rows.filter(r => r.company === co).sort((a, b) => +b.prem - +a.prem);
+  tb.replaceChildren(...rows.map(r => {
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-key', encodeURIComponent(r.company) + ',' + encodeURIComponent(r.cls));
+    [['cls', r.cls], ['prem', KZ.f1(+r.prem)], ['share_in_company', KZ.f1(+r.share_in_company)], ['share_in_class', KZ.f1(+r.share_in_class)], ['pay', KZ.f1(+r.pay)], ['loss_ratio', r.loss_ratio === null || r.loss_ratio === undefined ? '—' : KZ.f1(+r.loss_ratio)]].forEach(([k, t]) => {
+      const td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
+    });
+    return tr;
+  }));
+});
+
+dash.draw('heat', (el) => {
+  if (!KZ.status(el, 'company_classes')) return;
+  const m = KZ.cc(); el.replaceChildren();
+  const W = el.clientWidth || 400, mg = {t: 46, r: 4, b: 4, l: 10}, rh = 26;
+  const svg = d3.select(el).append('svg').attr('role', 'img').attr('aria-label', 'Доля каждой компании в премиях каждого класса страхования');
+  const tmp = svg.append('g'); let lw = 0;
+  m.cos.forEach(c => { lw = Math.max(lw, tmp.append('text').text(c).node().getComputedTextLength()); }); tmp.remove();
+  mg.l = lw + 10;
+  const H = m.cos.length * rh + mg.t + mg.b; svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const x = d3.scaleBand().domain(m.classes).range([mg.l, W - mg.r]).padding(0.06);
+  const y = d3.scaleBand().domain(m.cos).range([mg.t, H - mg.b]).padding(0.06);
+  const op = d3.scaleLinear().domain([0, 60]).range([0.04, 0.9]).clamp(true);
+  const narrow = x.bandwidth() < 48;
+  svg.append('g').selectAll('text').data(m.classes).join('text')
+    .attr('transform', c => `translate(${x(c) + x.bandwidth() / 2},${mg.t - 6}) rotate(${narrow ? -35 : 0})`)
+    .attr('text-anchor', narrow ? 'start' : 'middle').text(c => KZ.sh(c));
+  svg.append('g').selectAll('text').data(m.cos).join('text').attr('x', mg.l - 8).attr('y', c => y(c) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text(c => c);
+  const tip = KZ.tip(el);
+  m.rows.forEach(r => {
+    const v = +r.share_in_class;
+    const g = svg.append('g');
+    g.append('rect').attr('x', x(r.cls)).attr('y', y(r.company)).attr('width', x.bandwidth()).attr('height', y.bandwidth()).attr('rx', 2).style('fill', dash.colors[0]).style('fill-opacity', op(v))
+      .on('pointermove', (ev) => KZ.showTip(el, tip, ev, [r.company, r.cls, `Доля в классе: ${KZ.f1(v)}%`, `Премии: ${KZ.f1(+r.prem)} млрд ₸`])).on('pointerleave', () => { tip.hidden = true; });
+    if (v >= 0.5 && x.bandwidth() > 26) g.append('text').attr('x', x(r.cls) + x.bandwidth() / 2).attr('y', y(r.company) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'middle').style('pointer-events', 'none').style('fill', v >= 35 ? '#fff' : 'var(--color-fg)').text(Math.round(v));
+  });
+});
+['lg6'].forEach(n => dash.draw(n, el => { el.style.background = dash.colors[0]; }));
+['lg7'].forEach(n => dash.draw(n, el => { el.style.background = dash.colors[1]; }));
+</script>
+</main>
+<footer class="site-foot">Источники: Национальный Банк РК, АРРФР. Данные — в папке data/ репозитория, обновление ежемесячно.</footer>
+</body>
+</html>
